@@ -11,7 +11,7 @@ This project builds a machine learning pipeline to do exactly that — forecasti
 
 ## Instructions
 
-To replicate our analysis end-to-end, simply open an Rmd notebook and copy our code which can be found in the 'src' folder
+To replicate our analysis end-to-end, simply open an Rmd notebook and copy our code which can be found in the 'enterococci-forecasting.Rmd' file
 
 EDA: From lines 1-2,437
 
