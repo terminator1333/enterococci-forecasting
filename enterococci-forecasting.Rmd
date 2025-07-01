@@ -11,21 +11,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Importing Libraries
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
-options(repos = c(CRAN = "https://cran.rstudio.com/"))
-
-# Check and install required packages
-required_packages <- c("dplyr", "ggplot2", "tidyr", "corrplot", "car", "broom", "scales", "viridis")
-
-for (pkg in required_packages) {
-  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
-    install.packages(pkg, dependencies = TRUE)
-    library(pkg, character.only = TRUE)
-  }
-}
-```
-
 
 ```{r}
 library(caret)
@@ -70,6 +55,9 @@ theme_analysis <- theme_minimal(base_size = 12) +
 water_data<- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-05-20/water_quality.csv')
 weather_data <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/main/data/2025/2025-05-20/weather.csv')
 ```
+
+
+
 
 # Initial data exploration
 
@@ -2835,30 +2823,9 @@ water_quality_multi$log_enterococci <- log1p(water_quality_multi$enterococci_cfu
 #fitting multiple linear regression model with selected features
 model <- lm(log_enterococci ~ . -risk_category -enterococci_cfu_100ml, data = water_quality_multi)
 summary(model)
-plot(model)
 ```
 
 
-```{r}
-#ensuring target is a factor
-water_quality_multi <- water_quality_multi %>%
-  mutate(
-    region = as.factor(region),
-    swim_site = as.factor(swim_site),
-    season = as.factor(season),
-    month = as.factor(month),
-    risk_category = as.factor(risk_category)  # Multiclass target
-  )
-
-#fitting multinomial logistic regression
-multi_logit_model <- multinom(
-  risk_category ~ . - enterococci_cfu_100ml - log_enterococci,
-  data = water_quality_multi
-)
-
-summary(multi_logit_model)
-
-```
 
 ```{r}
 
@@ -2873,6 +2840,7 @@ par(mfrow = c(1,1))
 ```
 
 
+Weighted + Cleaned Models
 ```{r}
 
 leverage <- hatvalues(model)
@@ -3088,23 +3056,20 @@ for (i in seq_len(nrow(cor_pairs))) {
 
 We will drop the following features due to high correlation to other features: 
 
-1. max_temp_C,
-2. precip_7day_avg
-3. precip_lag1
-4. conductivity_lag1
-5. precip_water_temp
-6. temp_precip_3day
+1. max_temp_C
+2. conductivity_lag1
+3. precip_water_temp
+4. temp_precip_3day
+5. water_temp_scaled
+6. conductivity_scaled
 
 ```{r}
 selected_features <- c(
   "risk_category", "region", "council", "swim_site",
-  "hour",
+  "hour",  # keep hour instead of hour_bin for simplicity, both significant
   "water_temperature_c", "conductivity_ms_cm",
-  "latitude", "longitude",
-  "max_temp_C_scaled", "water_temp_scaled", "conductivity_scaled",
-  "precipitation_mm", "precip_3day_avg",
-  "temp_gradient", "temp_diff", "temp_conductivity",
-  "conductivity_precip_3day",
+  "latitude", "longitude", "max_temp_C_scaled",
+  "precipitation_mm", "precip_7day_avg", "precip_lag1", "temp_gradient", "temp_diff", "temp_conductivity", "conductivity_precip_3day",
   "is_temp_extreme", "temp_normalized", "rain_deficit", "rain_day"
 )
 model_data <- water_quality_multi %>%
@@ -3195,7 +3160,7 @@ predict_with_thresholds <- function(model, data, thresholds, classes) {#function
   factor(predictions, levels = classes)
 }
 
-thresholds <- c(Bad = 0.35, Poor = 0.6, Fair = 0.75, Safe = 1.5)
+thresholds <- c(Bad = 0.35, Poor = 0.6, Fair = 0.5, Safe = 1.5)
 classes <- c("Bad", "Poor", "Fair", "Safe")
 predictions <- predict_with_thresholds(xgb_model, test_matrix, thresholds, classes)
 
@@ -3256,7 +3221,7 @@ for (cls in classes) {
   
   importance_bin <- xgb.importance(feature_names = colnames(model_data_xgb[, -1]), model = model_bin)
   cat(paste0("Top features for class ", cls, ":\n"))
-  print(importance_bin %>% arrange(desc(Gain)) %>% slice_head(n = 5))
+  print(importance_bin %>% arrange(desc(Gain)) %>% slice_head(n = 10))
 }
 
 ```
@@ -3266,16 +3231,14 @@ Removing unimportant features from minority classes + fine tuning
 The ones to remove: 
 
 
-1. water_temp_scaled
-2. conductivity_scaled
-3. temp_gradient
-4. temp_normalized
-5. rain_deficit
+1. temp_gradient
+2. temp_normalized
+3. rain_deficit
 
 ```{r}
 
 
-
+set.seed(123)
 selected_features <- c(
   "risk_category", "region", "council", "swim_site",
   "hour",
@@ -3316,10 +3279,10 @@ test_data_xgb <- test_data %>%
 
 #weights by classes
 sample_weights <- case_when(
-  model_data$risk_category == "Bad" ~ 30,
+  model_data$risk_category == "Bad" ~ 40,
   model_data$risk_category == "Poor" ~ 15,
   model_data$risk_category == "Fair" ~ 20,
-  model_data$risk_category == "Safe" ~ 3
+  model_data$risk_category == "Safe" ~ 2.5
 )
 
 #turning to DMatrix
@@ -3417,7 +3380,7 @@ final_model <- xgb.train(
 
 #testing + evaluation
 
-thresholds <- c(Bad = 0.35, Poor = 0.95, Fair = 0.5, Safe = 1.6)
+thresholds <- c(Bad = 0.45, Poor = 1, Fair = 0.5, Safe = 1.25)
 classes <- c("Bad", "Poor", "Fair", "Safe")
 
 predict_with_thresholds <- function(model, data, thresholds, classes) {
