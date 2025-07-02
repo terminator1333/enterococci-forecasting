@@ -13,9 +13,9 @@ This project builds a machine learning pipeline to do exactly that — forecasti
 
 To replicate our analysis end-to-end, simply open an Rmd notebook and copy our code which can be found in the 'enterococci-forecasting.Rmd' file
 
-EDA: From lines 1-2,437
+EDA: From lines 1-1,310
 
-Features Significance + Model Building 2,455-3,434
+Features Significance + Model Building 1,314 - 2,281
 
 ---
 
